@@ -24,59 +24,15 @@ jobs:
             rm -rf temp_extract
           fi
 
-      - name: Inject Fullscreen & Dashboard Updates
+      - name: Inject Updates
         run: |
-          # 1. Update MainActivity.kt for Immersive Fullscreen
-          cat << 'EOF' > app/src/main/java/com/ayman/smartiptv/MainActivity.kt
-          package com.ayman.smartiptv
-
-          import android.os.Bundle
-          import androidx.activity.ComponentActivity
-          import androidx.activity.compose.setContent
-          import androidx.activity.enableEdgeToEdge
-          import androidx.compose.foundation.layout.fillMaxSize
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.Surface
-          import androidx.compose.ui.Modifier
-          import androidx.core.view.WindowCompat
-          import androidx.core.view.WindowInsetsCompat
-          import androidx.core.view.WindowInsetsControllerCompat
-          import com.ayman.smartiptv.ui.theme.AymanIPTVTheme
-
-          class MainActivity : ComponentActivity() {
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  enableEdgeToEdge()
-
-                  setContent {
-                      AymanIPTVTheme {
-                          Surface(
-                              modifier = Modifier.fillMaxSize(),
-                              color = MaterialTheme.colorScheme.background
-                          ) {
-                              AppNavigation()
-                          }
-                      }
-                  }
-              }
-
-              fun setImmersiveFullscreen(enable: Boolean) {
-                  val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-                  if (enable) {
-                      insetsController.systemBarsBehavior =
-                          WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                      insetsController.hide(WindowInsetsCompat.Type.systemBars())
-                  } else {
-                      insetsController.show(WindowInsetsCompat.Type.systemBars())
-                  }
-              }
-          }
-          EOF
-
-          # 2. Update PlayerScreen.kt
+          # 1. Update PlayerScreen.kt for Immersive Fullscreen and AutoHide Controls
           cat << 'EOF' > app/src/main/java/com/ayman/smartiptv/ui/screens/PlayerScreen.kt
           package com.ayman.smartiptv.ui.screens
 
+          import android.app.Activity
+          import android.content.Context
+          import android.content.ContextWrapper
           import android.content.pm.ActivityInfo
           import android.view.ViewGroup
           import android.widget.FrameLayout
@@ -101,12 +57,20 @@ jobs:
           import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.viewinterop.AndroidView
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
           import androidx.media3.common.MediaItem
           import androidx.media3.exoplayer.ExoPlayer
           import androidx.media3.ui.AspectRatioFrameLayout
           import androidx.media3.ui.PlayerView
-          import com.ayman.smartiptv.MainActivity
           import kotlinx.coroutines.delay
+
+          fun Context.findActivity(): Activity? = when (this) {
+              is Activity -> this
+              is ContextWrapper -> baseContext.findActivity()
+              else -> null
+          }
 
           @Composable
           fun PlayerScreen(
@@ -115,18 +79,26 @@ jobs:
               onBackClick: () -> Unit
           ) {
               val context = LocalContext.current
-              val activity = context as? MainActivity
-
+              val activity = remember(context) { context.findActivity() }
               var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
-              DisposableEffect(Unit) {
+              DisposableEffect(activity) {
                   val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                   activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                  activity?.setImmersiveFullscreen(true)
+
+                  activity?.window?.let { window ->
+                      val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                      insetsController.systemBarsBehavior =
+                          WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                      insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                  }
 
                   onDispose {
                       activity?.requestedOrientation = originalOrientation
-                      activity?.setImmersiveFullscreen(false)
+                      activity?.window?.let { window ->
+                          val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                          insetsController.show(WindowInsetsCompat.Type.systemBars())
+                      }
                   }
               }
 
@@ -313,7 +285,7 @@ jobs:
           }
           EOF
 
-          # 3. Update DashboardScreen.kt
+          # 2. Update DashboardScreen.kt to use local preferences for account and expiry
           cat << 'EOF' > app/src/main/java/com/ayman/smartiptv/ui/screens/DashboardScreen.kt
           package com.ayman.smartiptv.ui.screens
 
@@ -331,9 +303,11 @@ jobs:
           import androidx.compose.ui.graphics.Brush
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
+          import com.ayman.smartiptv.data.local.PreferencesManager
           import com.ayman.smartiptv.viewmodel.AppViewModel
           import java.text.SimpleDateFormat
           import java.util.*
@@ -346,10 +320,12 @@ jobs:
               onNavigateToSeries: () -> Unit,
               onLogout: () -> Unit
           ) {
-              val userInfo by viewModel.userInfo.collectAsState()
+              val context = LocalContext.current
+              val prefs = remember { PreferencesManager(context) }
+              val serverData by prefs.serverDataFlow.collectAsState(initial = null)
 
-              val expDateString = remember(userInfo) {
-                  val timestamp = userInfo?.expDate?.toLongOrNull()
+              val expDateString = remember(serverData) {
+                  val timestamp = serverData?.expDate?.toLongOrNull()
                   if (timestamp != null && timestamp > 0) {
                       val date = Date(timestamp * 1000)
                       SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
@@ -358,8 +334,8 @@ jobs:
                   }
               }
 
-              val daysRemaining = remember(userInfo) {
-                  val timestamp = userInfo?.expDate?.toLongOrNull()
+              val daysRemaining = remember(serverData) {
+                  val timestamp = serverData?.expDate?.toLongOrNull()
                   if (timestamp != null && timestamp > 0) {
                       val diff = (timestamp * 1000) - System.currentTimeMillis()
                       val days = diff / (1000 * 60 * 60 * 24)
@@ -389,7 +365,7 @@ jobs:
                               fontWeight = FontWeight.ExtraBold
                           )
                           Text(
-                              text = "مرحباً، ${userInfo?.username ?: "مستخدم"}",
+                              text = "مرحباً، ${serverData?.username ?: "مستخدم"}",
                               color = Color(0xFFAAAAAA),
                               fontSize = 14.sp
                           )
@@ -504,7 +480,7 @@ jobs:
                       .fillMaxWidth()
                       .height(84.dp)
                       .clickable(onClick = onClick)
-                  .background(brush = Brush.horizontalGradient(gradient), shape = RoundedCornerShape(14.dp))
+                      .background(brush = Brush.horizontalGradient(gradient), shape = RoundedCornerShape(14.dp))
               ) {
                   Row(
                       modifier = Modifier
