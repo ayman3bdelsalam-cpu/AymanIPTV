@@ -13,14 +13,38 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Unzip Project
+    - name: Unzip and Prepare Project
       run: |
         ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
         if [ -n "$ZIP_FILE" ]; then
-          echo "Found zip: $ZIP_FILE"
-          unzip -q "$ZIP_FILE" -d extracted_project
-          PROJECT_DIR=$(find extracted_project -name "build.gradle*" -exec dirname {} \; | head -n 1)
-          cp -r "$PROJECT_DIR"/* .
+          unzip -q "$ZIP_FILE" -d temp_extract
+          PROJECT_ROOT=$(find temp_extract -name "settings.gradle*" -exec dirname {} \; | head -n 1)
+          shopt -s dotglob
+          cp -rf "$PROJECT_ROOT"/* .
+          rm -rf temp_extract
+        fi
+
+    - name: Fix Plugin Management Repositories
+      run: |
+        cat << 'EOF' > settings.gradle.kts.tmp
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        EOF
+        if [ -f settings.gradle.kts ]; then
+          cat settings.gradle.kts >> settings.gradle.kts.tmp
+          mv settings.gradle.kts.tmp settings.gradle.kts
         fi
 
     - name: Set up JDK 17
@@ -28,16 +52,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Setup Gradle
+    - name: Setup Gradle 8.4
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.4'
 
-    - name: Build APK with Gradle
+    - name: Build Debug APK
       run: gradle assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: AymanIPTV-App
-        path: "**/build/outputs/apk/debug/*.apk"
+        path: app/build/outputs/apk/debug/*.apk
