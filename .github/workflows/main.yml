@@ -53,7 +53,6 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
-    // التحكم في وضع ملء الشاشة والشاشة العرضية
     DisposableEffect(activity) {
         val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -98,7 +97,6 @@ fun PlayerScreen(
         }
     }
 
-    // إخفاء أزرار التحكم تلقائياً بعد 3 ثوانٍ
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
             delay(3500)
@@ -106,7 +104,6 @@ fun PlayerScreen(
         }
     }
 
-    // تحديث مؤشر وقت الفيديو
     LaunchedEffect(exoPlayer) {
         while (true) {
             currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -141,7 +138,6 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // طبقة التحكم الشفافة
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -153,7 +149,6 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.45f))
             ) {
-                // الشريط العلوي (رجوع وعنوان)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -180,7 +175,6 @@ fun PlayerScreen(
                     )
                 }
 
-                // أزرار الوسط (تقديم / تشغيل وإيقاف / تأخير)
                 Row(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -237,7 +231,6 @@ fun PlayerScreen(
                     }
                 }
 
-                // الشريط السفلي (شريط التمرير والتوقيت)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
