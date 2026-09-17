@@ -24,18 +24,14 @@ jobs:
             rm -rf temp_extract
           fi
 
-      - name: Apply Fullscreen and AutoHide Patch
+      - name: Apply Clean Fullscreen Patch
         run: |
-          # 1. إجبار شاشة المشغل على الوضع العرضي وملء الشاشة الحقيقي (Immersive Mode)
           PLAYER_FILE="app/src/main/java/com/ayman/smartiptv/ui/screens/PlayerScreen.kt"
           if [ -f "$PLAYER_FILE" ]; then
-            # إضافة الـ imports الضرورية
-            sed -i '1a import androidx.core.view.WindowCompat\nimport androidx.core.view.WindowInsetsCompat\nimport androidx.core.view.WindowInsetsControllerCompat\nimport android.content.pm.ActivityInfo\nimport android.app.Activity\nimport android.content.ContextWrapper' "$PLAYER_FILE"
+            # تفعيل وضع ملء الشاشة الكامل وإخفاء أشرطة النظام باستخدام المسارات الكاملة لتجنب تعارض الـ imports
+            sed -i 's/useController = true/useController = true\n            (context as? android.app.Activity ?: (context as? android.content.ContextWrapper)?.baseContext as? android.app.Activity)?.window?.let { window ->\n                val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)\n                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE\n                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())\n            }/g' "$PLAYER_FILE"
 
-            # تفعيل الـ Immersive Fullscreen داخل PlayerView
-            sed -i 's/useController = true/useController = true\n            (context as? Activity ?: (context as? ContextWrapper)?.baseContext as? Activity)?.window?.let { window ->\n                val controller = WindowCompat.getInsetsController(window, window.decorView)\n                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE\n                controller.hide(WindowInsetsCompat.Type.systemBars())\n            }/g' "$PLAYER_FILE"
-            
-            # ضبط وقت اختفاء أزرار التحكم بعد ثانيتين ونصف
+            # ضبط إخفاء أزرار التحكم تلقائياً
             sed -i 's/controllerShowTimeoutMs = [0-9]*/controllerShowTimeoutMs = 2500/g' "$PLAYER_FILE"
             sed -i 's/controllerHideOnTouch = false/controllerHideOnTouch = true/g' "$PLAYER_FILE"
           fi
